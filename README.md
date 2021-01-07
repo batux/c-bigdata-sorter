@@ -20,3 +20,6 @@ Then, we have to iterate this steps until all the data have been written to resu
 - Write minimum value to result file
 - Increment seek value of the temporary file which has minimum file
 
+# Compile Project
+
+gcc -Wall -o bigdata-sorter bigdata-sorter.c 
