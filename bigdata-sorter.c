@@ -13,6 +13,8 @@ const int RANDOM_NUMBER_SIZE = 1000000; //1000000; //100;
 const int CHUNK_SIZE = 100000; //100000; //10;
 const int DEBUG_FLAG = 0;
 
+#define DATA_SOURCE_FILE                            "random.dat"
+#define RESULT_FILE                                 "result.dat"
 #define RANDOM_NUMBER_WRITE_OPERATION_OK            0;
 #define RANDOM_NUMBER_WRITE_OPERATION_FAIL          100;
 #define RANDOM_NUMBER_WRITE_OPERATION_LIMIT_ZERO    101;
@@ -31,9 +33,8 @@ FILE *createDataFileIfNotExist(const char *filePath, int appendMode)
     if( (fBinaryData = fopen(filePath, "wb+")) == NULL )
     {
         fprintf(stderr, "cannot open file!...\n");
-        exit(EXIT_FAILURE);
-
-        // return NULL;
+        //exit(EXIT_FAILURE);
+        return NULL;
     }
 
     return fBinaryData;
@@ -357,9 +358,10 @@ void printRawData(FILE *fBinaryData, int debug)
 int main()
 {
     FILE *fBinaryData;
-    fBinaryData = createDataFileIfNotExist("random.dat", 0);
-
-    // add NULL check!
+    if( (fBinaryData = createDataFileIfNotExist(DATA_SOURCE_FILE, 0)) == NULL )
+    {
+        exit(EXIT_FAILURE);
+    }
 
     if( writeRandomNumbersToFile(fBinaryData, RANDOM_NUMBER_SIZE) > 0 )
     {
@@ -377,7 +379,10 @@ int main()
     int *seekPointsOfTmpFiles = createTmpFileSeekPoints(chunkPartLimit);
 
     FILE *fBinaryResult;
-    fBinaryResult = createDataFileIfNotExist("result.dat", 0);
+    if( (fBinaryResult = createDataFileIfNotExist(RESULT_FILE, 0)) == NULL )
+    {
+        exit(EXIT_FAILURE);
+    }
 
     int step = 0;
     while(1)
