@@ -15,37 +15,150 @@ const int DEBUG_FLAG = 0;
 
 #define DATA_SOURCE_FILE                            "random.dat"
 #define RESULT_FILE                                 "result.dat"
-#define RANDOM_NUMBER_WRITE_OPERATION_OK            0;
-#define RANDOM_NUMBER_WRITE_OPERATION_FAIL          100;
-#define RANDOM_NUMBER_WRITE_OPERATION_LIMIT_ZERO    101;
+#define RANDOM_NUMBER_WRITE_OPERATION_OK            0
+#define RANDOM_NUMBER_WRITE_OPERATION_FAIL          100
+#define RANDOM_NUMBER_WRITE_OPERATION_LIMIT_ZERO    101
 
+// Data file funcs...
+FILE *create_data_file_if_notexist(const char *file_path, int append_mode);
+int write_random_mumbers_to_file(FILE *f_binary_data, int limit);
+int *read_chunk_from_datafile(FILE *f_binary_data, int data_size, int seek_point);
+void print_result(FILE *f_binary_result, int debug);
+void print_rawdata(FILE *f_binary_data, int debug);
+void close_file(FILE *f_binary_data);
+void close_files(FILE *tmpfiles[], int limit);
 
-FILE *createDataFileIfNotExist(const char *filePath, int appendMode)
+// Temp file funcs...
+FILE *create_tmpfile();
+void create_tmpfiles(FILE *f_binary_data, FILE *tmpfiles[], int *chunk_limit_parts, int limit, int debug);
+void write_to_tmpfile(FILE *tmpf, int *nbr_arr, int limit);
+int read_from_tmpfile(FILE *f, int seek_point);
+int *read_numbers_from_tmpfiles(FILE *tmpfiles[], int *seekpoints_of_tmpfiles, int limit, int debug);
+int *create_tmpfile_seekpoints(int limit);
+
+// Common funcs...
+int calculate_chunk_size();
+int *create_chunk_limit_array(int limit);
+void print_numbers(int *arr, int chunk_size);
+int find_minvalue_index(int array[], int limit);
+int is_read_op_completed(int array[], int limit);
+
+// Sorting funcs...
+void swap(int *val1, int *val2);
+void bubblesort(int *array, int limit);
+
+int qsort_compare_func(const void * val1, const void * val2) 
 {
-    FILE *fBinaryData;
+   return ( *(int*)val1 - *(int*)val2 );
+}
 
-    if( appendMode == 1 && (fBinaryData = fopen(filePath, "r")) != NULL )
+int main()
+{
+    FILE *f_binarydata;
+    if( (f_binarydata = create_data_file_if_notexist(DATA_SOURCE_FILE, 0)) == NULL )
     {
-        fBinaryData = fopen(filePath, "ab+");
-        return fBinaryData;
+        exit(EXIT_FAILURE);
     }
 
-    if( (fBinaryData = fopen(filePath, "wb+")) == NULL )
+    if( write_random_mumbers_to_file(f_binarydata, RANDOM_NUMBER_SIZE) > 0 )
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    print_rawdata(f_binarydata, DEBUG_FLAG);
+
+    int chunkpart_limit = calculate_chunk_size();
+    int *chunklimit_parts = create_chunk_limit_array(chunkpart_limit);
+
+    FILE *tmpfiles[chunkpart_limit];
+    create_tmpfiles(f_binarydata, tmpfiles, chunklimit_parts, chunkpart_limit, DEBUG_FLAG);
+    
+    int *seekpoints_of_tmpfiles = create_tmpfile_seekpoints(chunkpart_limit);
+
+    FILE *f_binaryresult;
+    if( (f_binaryresult = create_data_file_if_notexist(RESULT_FILE, 0)) == NULL )
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    int step = 0;
+    while(1)
+    {   
+        if(DEBUG_FLAG)
+        {
+            printf("ITERATION-%d\n", step);
+        }
+        
+        int *tmpvalues = read_numbers_from_tmpfiles(tmpfiles, seekpoints_of_tmpfiles, chunkpart_limit, DEBUG_FLAG);
+
+        if(is_read_op_completed(tmpvalues, chunkpart_limit) == 1)
+        {
+            if(DEBUG_FLAG)
+            {
+                printf("BREAK OUT!!\n");
+            }
+            break;
+        }
+
+        int minval_index = find_minvalue_index(tmpvalues, chunkpart_limit);
+        int minval = tmpvalues[minval_index];
+
+        if(DEBUG_FLAG)
+        {
+            printf("MIN TMP INDEX: %d\n", minval_index);
+            printf("MIN VALUE: %d\n", minval);
+        }
+
+        if (fwrite(&minval, sizeof(int), 1, f_binaryresult) != 1) 
+        {
+            fprintf(stderr, "cannot write file!..\n");
+            exit(EXIT_FAILURE);
+        }
+
+        seekpoints_of_tmpfiles[minval_index] = seekpoints_of_tmpfiles[minval_index] + 1;
+        step++;
+
+        if(DEBUG_FLAG)
+        {
+            printf("----------------------------------------------------\n");
+        }
+    }
+    
+    print_result(f_binaryresult, DEBUG_FLAG);
+    
+    free(chunklimit_parts);
+    close_file(f_binarydata);
+    close_file(f_binaryresult);
+    close_files(tmpfiles, chunkpart_limit);
+
+    return 0;
+}
+
+FILE *create_data_file_if_notexist(const char *file_path, int append_mode)
+{
+    FILE *f_binary_data;
+
+    if( append_mode == 1 && (f_binary_data = fopen(file_path, "r")) != NULL )
+    {
+        f_binary_data = fopen(file_path, "ab+");
+        return f_binary_data;
+    }
+
+    if( (f_binary_data = fopen(file_path, "wb+")) == NULL )
     {
         fprintf(stderr, "cannot open file!...\n");
-        //exit(EXIT_FAILURE);
         return NULL;
     }
 
-    return fBinaryData;
+    return f_binary_data;
 }
 
-void closeFile(FILE *fBinaryData)
+void close_file(FILE *f_binary_data)
 {
-    fclose(fBinaryData);
+    fclose(f_binary_data);
 }
 
-int writeRandomNumbersToFile(FILE *fBinaryData, int limit)
+int write_random_mumbers_to_file(FILE *f_binary_data, int limit)
 {
     srand(time(0));
 
@@ -56,10 +169,10 @@ int writeRandomNumbersToFile(FILE *fBinaryData, int limit)
 
     for(int i = 0; i < limit; i++)
     {
-        int randomNumber = rand() / 100000;
-        if (fwrite(&randomNumber, sizeof(int), 1, fBinaryData) != 1) 
+        int random_number = rand() / 100000;
+        if (fwrite(&random_number, sizeof(int), 1, f_binary_data) != 1) 
         {
-            if (ferror(fBinaryData)) 
+            if (ferror(f_binary_data)) 
             {
                 fprintf(stderr, "cannot write file!..\n");
 			    return RANDOM_NUMBER_WRITE_OPERATION_FAIL;
@@ -70,81 +183,73 @@ int writeRandomNumbersToFile(FILE *fBinaryData, int limit)
     return RANDOM_NUMBER_WRITE_OPERATION_OK;
 }
 
-FILE *createTmpFile()
+FILE *create_tmpfile()
 {
-    FILE *tmpFile = NULL;
+    FILE *tmpf = NULL;
 
-	if ((tmpFile = tmpfile()) == NULL) 
+	if ((tmpf = tmpfile()) == NULL) 
     {
 		fprintf(stderr, "cannot create temporary file!..\n");
 		exit(EXIT_FAILURE);
 	}
 
-    return tmpFile;
+    return tmpf;
 }
 
-int calculateChunkSize()
+int calculate_chunk_size()
 {
-    int chunkPartCount = RANDOM_NUMBER_SIZE / CHUNK_SIZE;
+    int chunk_part_count = RANDOM_NUMBER_SIZE / CHUNK_SIZE;
     if( (RANDOM_NUMBER_SIZE % CHUNK_SIZE) > 0)
     {
-        chunkPartCount++;
+        chunk_part_count++;
     }
-    return chunkPartCount;
+    return chunk_part_count;
 }
 
-int *createChunkLimitArray(int limit)
+int *create_chunk_limit_array(int limit)
 {
-    int *chunkLimitParts = (int*) malloc(limit * sizeof(int));
-    int chunkPartCount = RANDOM_NUMBER_SIZE / CHUNK_SIZE;
+    int *chunk_limit_parts = (int*) malloc(limit * sizeof(int));
+    int chunk_part_count = RANDOM_NUMBER_SIZE / CHUNK_SIZE;
 
-    for(int i = 0; i < chunkPartCount; i++)
+    for(int i = 0; i < chunk_part_count; i++)
     {
-        chunkLimitParts[i] = CHUNK_SIZE;
+        chunk_limit_parts[i] = CHUNK_SIZE;
     }
 
-    int hasLeapItem = (limit - chunkPartCount);
-    if(hasLeapItem > 0)
+    int has_leap_item = (limit - chunk_part_count);
+    if(has_leap_item > 0)
     {
-        chunkLimitParts[limit - 1] = (RANDOM_NUMBER_SIZE % CHUNK_SIZE);
+        chunk_limit_parts[limit - 1] = (RANDOM_NUMBER_SIZE % CHUNK_SIZE);
     }
 
-    return chunkLimitParts;
+    return chunk_limit_parts;
 }
 
-int *readChunkFromDataFile(FILE *fBinaryData, int dataSize, int seekPoint)
+int *read_chunk_from_datafile(FILE *f_binary_data, int data_size, int seek_point)
 {
-    int val;
-    int chunkItemCounter = 0;
-    int *chunkNumberArr = (int*) malloc(dataSize * sizeof(int));
-
-    fseek(fBinaryData, (seekPoint * sizeof(int)), SEEK_SET);
-    //printf("FILE CURSOR: %ld\n", ftell(fBinaryData));
-
-    while ( fread(&val, sizeof(int), 1, fBinaryData) > 0 )
+    int *chunk_number_arr;
+    if ((chunk_number_arr = (int *)malloc(data_size * sizeof(int))) == NULL) 
     {
-        if( !(chunkItemCounter < dataSize) )
-        {
-            break;
-        }
-        chunkNumberArr[chunkItemCounter] = val;
-        //printf("chunkNumberArr[%d]: %d \n", chunkItemCounter, chunkNumberArr[chunkItemCounter]);
-        chunkItemCounter++;
-    }
-
-    if (ferror(fBinaryData)) 
-    {
-		fprintf(stderr, "cannot read file!..\n");
+		fprintf(stderr, "cannot allocate memory!..\n");
 		exit(EXIT_FAILURE);
 	}
 
-    return chunkNumberArr;
+    fseek(f_binary_data, (seek_point * sizeof(int)), SEEK_SET);
+    //printf("FILE CURSOR: %ld\n", ftell(f_binary_data));
+
+    if(fread(chunk_number_arr, sizeof(int), data_size, f_binary_data) != data_size)
+    {
+        fprintf(stderr, "cannot read file!..\n");
+		exit(EXIT_FAILURE);
+    }
+
+    return chunk_number_arr;
 }
 
-void printNumbers(int *arr, int chunkSize)
+void print_numbers(int *arr, int chunk_size)
 {   
     int i = 0;
-    while(i < chunkSize)
+    while(i < chunk_size)
     {
         printf("%d \n", *(arr + i));
         i++;
@@ -152,22 +257,18 @@ void printNumbers(int *arr, int chunkSize)
     printf("------------------------------------------------------\n");
 }
 
-void writeToTmpFile(FILE *tmpF, int *nbrArr, int limit)
+void write_to_tmpfile(FILE *tmpf, int *nbr_arr, int limit)
 {
-    for (int i = 0; i < limit; i++)
+    if (fwrite(nbr_arr, sizeof(int), limit, tmpf) != limit) 
     {
-        int val = nbrArr[i];
-        if (fwrite(&val, sizeof(int), 1, tmpF) != 1) 
-        {
-			fprintf(stderr, "cannot write file!..\n");
-			exit(EXIT_FAILURE);
-		}
+        fprintf(stderr, "cannot write file!..\n");
+        exit(EXIT_FAILURE);
     }
 }
 
-int readFromTmpFile(FILE *f, int seekPoint)
+int read_from_tmpfile(FILE *f, int seek_point)
 {
-    fseek(f, (seekPoint * sizeof(int)), SEEK_SET);
+    fseek(f, (seek_point * sizeof(int)), SEEK_SET);
 
     int val;
     if (fread(&val, sizeof(int), 1, f) > 0)
@@ -178,24 +279,23 @@ int readFromTmpFile(FILE *f, int seekPoint)
     return INT_MAX;
 }
 
-int findMinValueIndex(int array[], int limit) 
+int find_minvalue_index(int array[], int limit) 
 {
-    int minIndex = 0;
-    int min = array[minIndex];
+    int min_index = 0;
+    int min = array[min_index];
 
     for (int i = 1; i < limit; i++)
     {
         if (array[i] < min)
         {
-            minIndex = i;
-            min = array[minIndex];
+            min_index = i;
+            min = array[min_index];
         }
     }
-
-    return minIndex;
+    return min_index;
 }
 
-int isReadCompleted(int array[], int limit)
+int is_read_op_completed(int array[], int limit)
 {
     int flag = 1;
     for (int i = 0; i < limit; i++)
@@ -209,16 +309,16 @@ int isReadCompleted(int array[], int limit)
     return flag;
 }
 
-void swap(int *xp, int *yp) 
+void swap(int *val1, int *val2) 
 { 
-    int temp = *xp; 
-    *xp = *yp; 
-    *yp = temp; 
+    int temp = *val1; 
+    *val1 = *val2; 
+    *val2 = temp;
 }
 
-void bubbleSort(int *array, int limit) 
+void bubblesort(int *array, int limit) 
 { 
-   int i, j; 
+   int i, j;
    for (i = 0; i < limit-1; i++)
    {
        for (j = 0; j < limit-i-1; j++) 
@@ -231,204 +331,130 @@ void bubbleSort(int *array, int limit)
    }
 } 
 
-void closeFiles(FILE *tmpFiles[], int limit)
+void close_files(FILE *tmpfiles[], int limit)
 {
-    int fileCounter = 0;
-    while(fileCounter < limit)
+    FILE *tmpf;
+    int file_counter = 0;
+
+    while(file_counter < limit)
     {
-        FILE *tmpF;
-        tmpF = tmpFiles[fileCounter];
-        closeFile(tmpF);
-        fileCounter++;
+        tmpf = tmpfiles[file_counter];
+        close_file(tmpf);
+        file_counter++;
     }
 }
 
-void printResult(FILE *fBinaryResult, int debug)
+void print_result(FILE *f_binary_result, int debug)
 {
     printf("FULL RESULT\n");
-    fseek(fBinaryResult, 0, SEEK_SET);
+    fseek(f_binary_result, 0, SEEK_SET);
 
     int valr;
-    int previousVal = 0;
-    int validFlag = 1;
-    while ( fread(&valr, sizeof(int), 1, fBinaryResult) > 0 )
+    int previous_val = 0;
+    int valid_flag = 1;
+    while ( fread(&valr, sizeof(int), 1, f_binary_result) > 0 )
     {   
         if(debug)
         {
             printf("%d \n", valr);
         }
         
-        if(previousVal != 0 && previousVal > valr)
+        if(previous_val != 0 && previous_val > valr)
         {
-            printf("INVALID STATE => pre: %d, curr: %d \n", previousVal, valr);
-            validFlag = 0;
+            printf("INVALID STATE => pre: %d, curr: %d \n", previous_val, valr);
+            valid_flag = 0;
             break;
         }
 
-        previousVal = valr;
+        previous_val = valr;
     }
     
-    if(validFlag == 1)
+    if(valid_flag == 1)
     {
         printf("ORDER SUCCESS!\n");
     }
 }
 
-int *createTmpFileSeekPoints(int limit)
+int *create_tmpfile_seekpoints(int limit)
 {
-    int *seekPointsOfTmpFiles = (int*) malloc( limit * sizeof(int) );
+    int *seek_points_of_tmpfiles = (int*) malloc( limit * sizeof(int) );
     for(int i = 0; i < limit; i++)
     {
-        seekPointsOfTmpFiles[i] = 0;
+        seek_points_of_tmpfiles[i] = 0;
     }
-    return seekPointsOfTmpFiles;
+    return seek_points_of_tmpfiles;
 }
 
-int *readNumbersFromTmpFiles(FILE *tmpFiles[], int *seekPointsOfTmpFiles, int limit, int debug)
+int *read_numbers_from_tmpfiles(FILE *tmpfiles[], int *seekpoints_of_tmpfiles, int limit, int debug)
 {
-    int *tmpValues = (int*) malloc( limit * sizeof(int) );
+    FILE *tmpf;
+    int *tmpvalues = (int*) malloc( limit * sizeof(int) );
 
     for(int i = 0; i < limit; i++)
     {
-        FILE *tmpF;
-        tmpF = tmpFiles[i];
-        int valueFromTmpFile = readFromTmpFile(tmpF, seekPointsOfTmpFiles[i]);
-        tmpValues[i] = valueFromTmpFile;
+        tmpf = tmpfiles[i];
+        int value_from_tmpfile = read_from_tmpfile(tmpf, seekpoints_of_tmpfiles[i]);
+        tmpvalues[i] = value_from_tmpfile;
 
         if(debug)
         {
-            printf("TMP-%d: %d  ", i, tmpValues[i]);
+            printf("TMP-%d: %d  ", i, tmpvalues[i]);
         }
     }
-    return tmpValues;
+    return tmpvalues;
 }
 
-void createTmpFiles(FILE *fBinaryData, FILE *tmpFiles[], int *chunkLimitParts, int limit, int debug)
+void create_tmpfiles(FILE *f_binary_data, FILE *tmpfiles[], int *chunk_limit_parts, int limit, int debug)
 {
-    int chunkPartCounter = 0;
-    int seekPoint = 0;
+    int chunkpart_counter = 0;
+    int seek_point = 0;
 
-    while(chunkPartCounter < limit)
+    while(chunkpart_counter < limit)
     {
-        int chunkSize = chunkLimitParts[chunkPartCounter];
+        int chunk_size = chunk_limit_parts[chunkpart_counter];
 
-        int *numberArr = readChunkFromDataFile(fBinaryData, chunkSize, seekPoint);
-        printf("STEP-%d \n", chunkPartCounter);
+        int *number_arr = read_chunk_from_datafile(f_binary_data, chunk_size, seek_point);
+        printf("STEP-%d \n", chunkpart_counter);
         
         if(debug)
         {
-            printNumbers(numberArr, chunkSize);
-            printf("ORDER-%d \n", chunkPartCounter);
+            print_numbers(number_arr, chunk_size);
+            printf("ORDER-%d \n", chunkpart_counter);
         }
         
-        bubbleSort(numberArr, chunkSize);
+        // Bubble sort is slower than quick sort!
+        // bubblesort(number_arr, chunk_size);
+
+        qsort(number_arr, chunk_size, sizeof(int), qsort_compare_func);
 
         if(debug)
         {
-            printNumbers(numberArr, chunkSize);
+            print_numbers(number_arr, chunk_size);
         }
 
-        FILE *tmpFile = createTmpFile();
-        writeToTmpFile(tmpFile, numberArr, chunkSize);
-        tmpFiles[chunkPartCounter] = tmpFile;
+        FILE *tmpfile = create_tmpfile();
+        write_to_tmpfile(tmpfile, number_arr, chunk_size);
+        tmpfiles[chunkpart_counter] = tmpfile;
 
-        free(numberArr);
+        free(number_arr);
 
-        seekPoint = seekPoint + chunkSize;
-        chunkPartCounter++;
+        seek_point = seek_point + chunk_size;
+        chunkpart_counter++;
     }
 }
 
-void printRawData(FILE *fBinaryData, int debug)
+void print_rawdata(FILE *f_binary_data, int debug)
 {   
     if(debug)
     {
         printf("FULL DATA\n");
-        fseek(fBinaryData, 0, SEEK_SET);
+        fseek(f_binary_data, 0, SEEK_SET);
 
         int valu;
-        while ( fread(&valu, sizeof(int), 1, fBinaryData) > 0 )
+        while ( fread(&valu, sizeof(int), 1, f_binary_data) > 0 )
         {
             printf("%d \n", valu);
         }
         printf("------------------------------------------------------\n");
     }
-}
-
-int main()
-{
-    FILE *fBinaryData;
-    if( (fBinaryData = createDataFileIfNotExist(DATA_SOURCE_FILE, 0)) == NULL )
-    {
-        exit(EXIT_FAILURE);
-    }
-
-    if( writeRandomNumbersToFile(fBinaryData, RANDOM_NUMBER_SIZE) > 0 )
-    {
-        exit(EXIT_FAILURE);
-    }
-
-    printRawData(fBinaryData, DEBUG_FLAG);
-
-    int chunkPartLimit = calculateChunkSize();
-    int *chunkLimitParts = createChunkLimitArray(chunkPartLimit);
-
-    FILE *tmpFiles[chunkPartLimit];
-    createTmpFiles(fBinaryData, tmpFiles, chunkLimitParts, chunkPartLimit, DEBUG_FLAG);
-    
-    int *seekPointsOfTmpFiles = createTmpFileSeekPoints(chunkPartLimit);
-
-    FILE *fBinaryResult;
-    if( (fBinaryResult = createDataFileIfNotExist(RESULT_FILE, 0)) == NULL )
-    {
-        exit(EXIT_FAILURE);
-    }
-
-    int step = 0;
-    while(1)
-    {   
-        printf("ITERATION-%d\n", step);
-        int *tmpValues = readNumbersFromTmpFiles(tmpFiles, seekPointsOfTmpFiles, chunkPartLimit, DEBUG_FLAG);
-
-        if(isReadCompleted(tmpValues, chunkPartLimit) == 1)
-        {
-            if(DEBUG_FLAG)
-            {
-                printf("BREAK OUT!!\n");
-            }
-            break;
-        }
-
-        int minValIndex = findMinValueIndex(tmpValues, chunkPartLimit);
-        int minVal = tmpValues[minValIndex];
-
-        if(DEBUG_FLAG)
-        {
-            printf("MIN TMP INDEX: %d\n", minValIndex);
-            printf("MIN VALUE: %d\n", minVal);
-        }
-
-        if (fwrite(&minVal, sizeof(int), 1, fBinaryResult) != 1) 
-        {
-            fprintf(stderr, "cannot write file!..\n");
-            exit(EXIT_FAILURE);
-        }
-
-        seekPointsOfTmpFiles[minValIndex] = seekPointsOfTmpFiles[minValIndex] + 1;
-        step++;
-
-        if(DEBUG_FLAG)
-        {
-            printf("----------------------------------------------------\n");
-        }
-    }
-    
-    printResult(fBinaryResult, DEBUG_FLAG);
-    
-    free(chunkLimitParts);
-    closeFile(fBinaryData);
-    closeFile(fBinaryResult);
-    closeFiles(tmpFiles, chunkPartLimit);
-
-    return 0;
 }
